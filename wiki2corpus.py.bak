@@ -37,9 +37,9 @@ import os
 import sys
 import argparse
 # use requests
-import urllib.request, urllib.error, urllib.parse
-import urllib.request, urllib.parse, urllib.error
-import http.client # httplib.HTTPException
+import urllib2
+import urllib
+import httplib # httplib.HTTPException
 import datetime
 import json
 import time
@@ -48,7 +48,7 @@ from justext import core as justext
 from lxml.etree import XMLSyntaxError, ParserError
 from unicodedata import category as unicode_char_category
 
-remove_links_re = re.compile('</?a[^>]*>')
+remove_links_re = re.compile(u'</?a[^>]*>')
 
 class MissingPage(Exception):
     pass
@@ -142,9 +142,9 @@ def html2prevert(s, justext_wordlist, justext_level='strict', allowshort=False):
             if p_text:
                 paragraph_count += 1
                 plaintext_len += len(p_text)
-                heading = ' heading="1"' if p['heading'] else ''
-                prevert_paragraphs.append('<p%s>\n%s\n</p>' % (heading, p_text))
-    return ('\n'.join(prevert_paragraphs), paragraph_count, plaintext_len)
+                heading = u' heading="1"' if p['heading'] else u''
+                prevert_paragraphs.append(u'<p%s>\n%s\n</p>' % (heading, p_text))
+    return (u'\n'.join(prevert_paragraphs), paragraph_count, plaintext_len)
 
 def api_wait(last, wait_interval):
     n = datetime.datetime.now()
@@ -157,9 +157,9 @@ def process_page(langcode, title, linksf, raw_response_fp, justext_wordlist, log
     api_wait(last_api_parse, wait_interval)
     api_url = API_HTML % (langcode, title)
     try:
-        response_data = urllib.request.urlopen(api_url).read()
+        response_data = urllib2.urlopen(api_url).read()
         parse_time = datetime.datetime.now()
-    except (IOError, http.client.HTTPException):
+    except (IOError, httplib.HTTPException):
         # IOError includes both urllib2.URLError and socket.error (Python >= 2.6 for the latter)
         raise MissingPage()
     data = json.loads(response_data)
@@ -189,7 +189,7 @@ def process_page(langcode, title, linksf, raw_response_fp, justext_wordlist, log
         for line in p['externallinks']:
             linksf.write(line.encode('utf-8') + '\n')
         linksf.write('\n')
-    print('\t%d chars' % plaintext_len, file=logf)
+    print >>logf, '\t%d chars' % plaintext_len
     page_attrs = 'url="%s" title="%s" categories="%s" translations="%d" paragraphs="%d" chars="%d" downloaded="%s"' % \
             ((WIKI_URL % langcode) + title, title, categories.encode('utf-8'),
             langlinks_len, paragraph_count, plaintext_len,
@@ -205,23 +205,23 @@ def go_page(langcode, title, linksf, raw_response_fp, newest, justext_wordlist, 
             previous_revid = cache[title]
             api_wait(last_api_request, wait_interval)
             last_api_request = datetime.datetime.now()
-            resp = urllib.request.urlopen(API_JSON % (langcode, title))
+            resp = urllib2.urlopen(API_JSON % (langcode, title))
             data = json.load(resp)
             dqp = data['query']['pages']
-            for key in list(dqp.keys()):
+            for key in dqp.keys():
                 try:
                     current_revid = dqp[key]['revisions'][0]['revid']
                 except (KeyError, IndexError):
-                    print('\tusing old revision %s instead of the newest ' \
-                        'revision (invalid Wiki API response data)' % previous_revid, file=logf)
+                    print >>logf, '\tusing old revision %s instead of the newest ' \
+                        'revision (invalid Wiki API response data)' % previous_revid
                     current_revid = previous_revid
                 if current_revid == previous_revid: # skip if cached is already newest
                     hits_by_type['skipped'] += 1
-                    print('\tskipping cached', file=logf)
+                    print >>logf, '\tskipping cached'
                     return (page, parlen, revid, last_api_parse)
         else: # skip because in cache
             hits_by_type['skipped'] += 1
-            print('\tskipping already downloaded', file=logf)
+            print >>logf, '\tskipping already downloaded'
             return (page, parlen, revid, last_api_parse)
     # download the page
     try:
@@ -233,15 +233,15 @@ def go_page(langcode, title, linksf, raw_response_fp, newest, justext_wordlist, 
         cache[title] = revid
         cf.write('%s\t%s\n' % (title, revid))
         hits_by_type['processed'] += 1
-        print('\t%d paragraphs' % parlen, file=logf)
+        print >>logf, '\t%d paragraphs' % parlen
     except (MissingPage, EmptyHTML, EmptyJusText) as e:
         page = ''
         hits_by_type['empty'] += 1
-        print({
+        print >>logf, {
                 'MissingPage': '\tempty because not found',
                 'EmptyHTML': '\tempty HTML parse returned by API',
                 'EmptyJusText': '\tempty prevert returned by jusText'} \
-                [type(e).__name__], file=logf)
+                [type(e).__name__]
     return (page, parlen, revid, last_api_parse)
 
 def main(langcode, cachefn, raw_response_path, newest, links, justext_wordlist,
@@ -252,7 +252,7 @@ def main(langcode, cachefn, raw_response_path, newest, links, justext_wordlist,
     linksf = open(links, 'a') if links else None
     cache = {}
     if os.path.exists(cachefn):
-        print('Cache: %s' % cachefn, file=logf)
+        print >>logf, 'Cache: %s' % cachefn
         with open(cachefn) as cf:
             for line in cf:
                 try:
@@ -263,18 +263,18 @@ def main(langcode, cachefn, raw_response_path, newest, links, justext_wordlist,
     cf = open(cachefn, 'a') # cache file
     raw_response_fp = open(raw_response_path, 'a') #raw API responses
     wikidump_titles_path = LATEST % (langcode.replace('-', '_'), langcode.replace('-', '_'))
-    print('Getting all titles from latest Wikipedia dump %s' % wikidump_titles_path, file=logf)
+    print >>logf, 'Getting all titles from latest Wikipedia dump %s' % wikidump_titles_path
     hits_by_type = {'processed': 0, 'skipped': 0, 'empty': 0}
-    filename, _ = urllib.request.urlretrieve(wikidump_titles_path)
+    filename, _ = urllib.urlretrieve(wikidump_titles_path)
     with gzip.open(filename) as df:
         for line in df:
             title = line.strip().replace('"', "'")
             # TODO: filter titles, use RE as parameter
-            print('%s' % title, file=logf)
-            if nicetitles and not unicode_char_category(str(title, 'utf-8')[0])[0] == 'L':
-                print('\tskipping (not a nice title)', title, file=logf)
+            print >>logf, '%s' % title
+            if nicetitles and not unicode_char_category(unicode(title, 'utf-8')[0])[0] == 'L':
+                print >>logf, '\tskipping (not a nice title)', title
                 continue
-            for page_title in [_f for _f in [title, 'Talk:' + title if talkpages else None] if _f]:
+            for page_title in filter(None, [title, 'Talk:' + title if talkpages else None]):
                 page, parlen, revid, last_api_parse =\
                         go_page(langcode, page_title, linksf,
                         raw_response_fp, newest, justext_wordlist, logf,
@@ -282,12 +282,12 @@ def main(langcode, cachefn, raw_response_path, newest, links, justext_wordlist,
                         justext_level, allowshort, cache, cf, hits_by_type)
                 if page:
                     sys.stdout.write(page)
-    print('Updated cache database stored in %s' % cachefn, file=logf)
+    print >>logf, 'Updated cache database stored in %s' % cachefn
     if linksf:
         linksf.close()
     cf.close()
-    for hit_type, hit_count in list(hits_by_type.items()):
-        print('%s: %d' % (hit_type.title(), hit_count), file=logf)
+    for hit_type, hit_count in hits_by_type.items():
+        print >>logf, '%s: %d' % (hit_type.title(), hit_count)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Wikipedia downloader')
